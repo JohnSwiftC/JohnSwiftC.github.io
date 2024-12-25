@@ -36,7 +36,7 @@ typedef struct addrinfo {
 
 The `addrinfo` struct, as the name suggests, contain information about an address. Flags, family, socket type, protocol, and more.
 
-In order to get a socket and bind, we need to get the addrinfo of the server (which is us, in this case.) Here is an example using `getaddrinfo`
+In order to get a socket and bind, we need to get the `addrinfo` of the server (which is us, in this case.) Here is an example using `getaddrinfo`
 
 {% highlight c %}
 struct addrinfo hints, * servinfo;
@@ -81,7 +81,7 @@ if(rv == -1) {
 
 {% endhighlight %}
 
-Take a second to think about what we are doing. We first get the addrinfo that represents us as a server. We then open a port and store the result as a socket file descriptor. Think of sockfd as a handle to the socket that we just opened, and we will need it for control over that socket.
+Take a second to think about what we are doing. We first get the `addrinfo` that represents us as a server. We then open a port and store the result as a socket file descriptor. Think of sockfd as a handle to the socket that we just opened, and we will need it for control over that socket.
 
 Also notice that while we are listening for connections, we are not accepting any. This leads us into using the `accept` function.
 
