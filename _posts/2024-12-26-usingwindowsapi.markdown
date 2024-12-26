@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Using and Abusing the Windows API (For Complete Beginners)"
-date:   2024-12-26 15:00:00 -0600
+date:   2024-12-26 12:00:00 -0600
 categories: cybersecurity maldev networking
 ---
 
