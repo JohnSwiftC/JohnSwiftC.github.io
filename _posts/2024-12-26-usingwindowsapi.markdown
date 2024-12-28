@@ -99,6 +99,8 @@ Some parts of the Windows API become very useful to us as we continue on our mal
 
 Functions like `DuplicateTokenEx` can then be used to create new *primary* tokens for a process. There exist other API methods to set the thread and process tokens, and tokens also have a vast amount of security configuration options as well. If you are more interested, the Windows Docs are the best way to learn about tokens.
 
+There are also other useful Windows functions like `LogonUser`, which returns a token which can be used to impersonate the rights of a user on the machine.
+
 # Key Takeaways
 
 While it would be impossible to show the magnitude of the Windows API in a single article, this is definitely a good start. The best way to learn about about it, in my opinion, is to just build applications that use it! Go read the docs [here](https://learn.microsoft.com/en-us/windows/apps/).
