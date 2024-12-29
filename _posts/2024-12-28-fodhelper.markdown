@@ -33,22 +33,38 @@ Playing around with this technique, even in its broken state, I found some fun s
 
 # Discovery
 
-I have been developing my own reverse shell (slowly becoming a full RAT), GuShell, for a minute now, so I decided to test that. When I utilised the listener, I noticed that I achieved the connection for a small period of time before the process was closed. This let me know that GuShell was being ran, even if it's just for a little bit.
+While working with the bypass technique, the time window stuck out as the easiest thing to take advantage of. I noticed that while the process I opened with the basic technique was almost instantly killed, I noticed that it was still able to perform some high-level functions in the short time window that it had. I naturally had the idea that while the high-level process might be killed almost instantly, what happens to child processes, or process spawned in admin context with `system`?
 
-Bear with me here now, GuShell has functions that both move itself, add itself to local machine autostart reg keys, and then also use the `DisableAntiSpyware` value to disable Windows Defender. These steps typically require elevation to do, and we get that elevation in the little time I have to do anything.
-
-I then used that little time to call both of these functions right at main. To my absolute delight, it worked! Defender could not close the process in time and all the registry keys were added. Here is where the magic comes in. Remember how the value that messes with fodhelper.exe is reset? After adding the `DisableAntiSpyware` value, Defender *completely fails* to reset it. So, we now have Defender disabled, autostart enabled, a hidden piece of malware, and a direct way to elevate it. Fun stuff!
+The answer is: absolutely nothing! They are created as high-integrity, even!
 
 # Technique Simplified (How I am using it)
 
-I also discovered that if you create a PowerShell instance with `CreateProcess`, that only that new child will be killed when using the malicious script. Knowing this...
+1. Set the path to the process as the default value in the registry key for fodhelper.exe, add `DelegateExecute`.
+2. Attacking process opens fodhelper.exe before registry key is reset.
+3. High-integrity process is spawned, and must then act as a *proxy* to another process before it is shortly killed.
+4. The new-new process will be high-integrity, and will also not be killed. Magic!
 
-In my malware:
+Here is an example process that can elevate itself with a little left out for the reader to enjoy themselves. It uses arguments to open *itself* when called from fodhelper.exe.
 
-1. Create a child PowerShell process through whatever means (probably create a script in directory to execute.)
-2. Start evil script that opens the malware *again*, this time with the few seconds of elevated privilege.
-3. Malware always attempts to `DisableAntiSpyware` when ran, and does so with the small amount of time allowed.
-4. We now are able to open the fodhelper.exe process, which will start the malware with complete elevation.
+{% highlight c %}
+int main(int argc, char * argv[]) {
+    if(argc == 2) {
+        system("Directory to self..."); // Opens self when there is an argument.
+    }
+
+    // Open and change reg keys with some method, maybe system(), or RegSetValueExW or many other methods.
+    
+    // I set the default to "dir..sample.exe arg", to trigger the self replication on admin.
+
+    // Windows is angry, elevate now!
+    system("fodhelper.exe")
+
+    // Process is dead here normally, but the new process is high-integrity and stays alive!
+
+    // Administrator functions...
+}
+
+{% endhighlight %}
 
 # Protecting yourself from this bypass
 
