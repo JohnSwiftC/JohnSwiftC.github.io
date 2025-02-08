@@ -29,7 +29,7 @@ With all the excuses out of the way, I did learn a good deal about Rust but also
 
 # How is Rust?
 
-I do think that I like Rust, or that I would like to like Rust, but it does irk me in some ways. The most greivous thing I encountered were insanely long and convoluted types (like Arc\<Mutex\<Vec\<UnverifiedMessage\>\>\>), which make writing async code more time consuming and tedious.
+I do think that I like Rust, or that I would like to like Rust, but it does irk me in some ways. The most grievous thing I encountered were insanely long and convoluted types (like Arc\<Mutex\<Vec\<UnverifiedMessage\>\>\>), which make writing async code more time consuming and tedious.
 
 My next problem is almost definitely a skill issue, and that is casting data through 4 different functions to reach the target user of that data. This is just an architecture problem that I generally dig myself into as I make abstractions too quickly, but making sure that my 23 different function calls and calls to those functions making the functions calls in main are all consistent is not a fun time.
 
