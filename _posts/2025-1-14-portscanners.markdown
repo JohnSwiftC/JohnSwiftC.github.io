@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Catching Port Scanners (going for my own Wi-Fi!)"
+title:  "Catching Port Scanners (going for my own network!)"
 date:   2025-1-14 10:30:15 -0600
 categories: cybersecurity reverseshell
 ---
