@@ -7,6 +7,8 @@ categories: rust
 
 # The Unknown Sender Project
 
+> Unforunately, the website is down now!
+
 Recently, following some introductory Rust programs I made (go look at my post from before!), I decided to dive headfirst into some more difficult applications. After careful deliberation I decided to make a webapp that allows users to send cute messages to random people and in theory be nice to eachother.
 
 After thinking about it some more, and by more I mean about 5 minutes, I quickly realized how *horrible* of an idea that was! Someone could send something probably pretty bad, completely anonymously, to someone they don't even know. I obviously still built it. [Unknown Sender Project](https://unknownsenderproject.app)
