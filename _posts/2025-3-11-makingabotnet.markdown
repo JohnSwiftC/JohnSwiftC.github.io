@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Building a Botnet in Rust"
-date: 2025-2-20 12:00.00 -0600
+date: 2025-3-12 12:00.00 -0600
 categories: cybersecurity
 ---
 

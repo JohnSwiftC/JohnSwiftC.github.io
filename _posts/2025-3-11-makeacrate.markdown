@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Go Make a Rust Crate"
-date: 2025-2-20 12:00.00 -0600
+date: 2025-3-11 12:00.00 -0600
 categories: programming
 ---
 
